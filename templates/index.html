@@ -1,0 +1,14 @@
+{%extends "base.html"%}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{%block title%}Index{%endblock%}
+
+{%block page_content%}
+<div class="page-header">
+<h1>Hello</h1>
+</div>
+<a href="/userSignUp">Cadastro de Usuário</a>
+<a href="/colaboratorSignUp">Cadastro de Colaborador</a>
+<a href="/applicationSignUp">Cadastro de Aplicação</a>
+{{ wtf.quick_form(form) }}
+{%endblock%}
