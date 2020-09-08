@@ -15,7 +15,7 @@ bootstrap = Bootstrap(app)
 app.config["SECRET_KEY"] = "STRINGHARDTOGUESS"
 
 @app.route('/')
-def index(methods=["GET","POST"]):
+def index():
 	return redirect(url_for("userSignUp"))
 @app.route('/makeEvaluation',methods=["GET","POST"])
 def makeEvaluation():
