@@ -26,7 +26,7 @@ def makeEvaluation():
 	
 	data = request.get_json()
 	keys = ["user_id","colaborator_id","key","evaluation","comments","questions"]
-	value_types = [str,str,str,float,str,dict]
+	value_types = [str,str,str,float,str,list]
 	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
 	if flag != 201:
 		client.close()
