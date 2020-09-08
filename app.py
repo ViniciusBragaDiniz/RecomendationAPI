@@ -15,8 +15,9 @@ bootstrap = Bootstrap(app)
 app.config["SECRET_KEY"] = "STRINGHARDTOGUESS"
 
 @app.route('/')
-def index():
+def index(methods=["GET","POST"]):
 	return redirect(url_for("userSignUp"))
+
 @app.route('/makeEvaluation',methods=["GET","POST"])
 def makeEvaluation():
 	client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
