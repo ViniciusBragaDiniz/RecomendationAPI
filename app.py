@@ -188,8 +188,10 @@ def ManageColaborators():
 	elif request.method == "GET":
 		d = {}
 		for i in colaborators.keys():
-			if i != "_id":
-				d[i]=colaborators[i]
+			d[i]={}
+			for j in colaborators[i]:
+				if j != "_id":
+					d[i][j]=colaborators[i][j]
 		return d, 226
 	
 if __name__ == "__main__":
