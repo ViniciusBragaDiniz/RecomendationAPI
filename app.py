@@ -6,6 +6,7 @@ import static.validations as val
 import static.json as json_handler
 import pymongo
 import time
+import os
 
 mb_user = "Vinicius"
 pwd = "sYlrvbXJUtKyvwBZ"
