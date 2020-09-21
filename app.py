@@ -174,7 +174,7 @@ def ManageColaborators():
 		
 		#Updates the Database
 		for i in range(len(data["colaborator_list"])):
-			db["Applications"].update_one(_application,{"$set":{"colaborators."+data["colaborator_list"][i]:data["status_list"][i]}})
+			db["Applications"].update_one(_application,{"$set":{"colaborators."+data["colaborator_list"][i]:data["status_list"][i]}},upsert=True)
 
 		return "Colaborators updated succesfully", 201
 
