@@ -95,12 +95,12 @@ def evaluationByApp():
 		return msg,flag
 
 	#Validates Application
-	msg, flag = val.validateApplication(data["app_id"])
+	msg, flag = val.validateApplication(data["app_id"],db)
 	if(flag != 201):
 		return msg,flag
 		
 	#Validates Colaborator
-	msg, flag = val.validateColaborator(data["colaborator_id"])
+	msg, flag = val.validateColaborator(data["colaborator_id"],db)
 	if flag!=201:
 		return msg, flag
 
@@ -130,7 +130,7 @@ def fullEvaluation():
 		return msg,flag
 
 	#Validates Colaborator
-	_colaborator, flag = val.validateColaborator(data["colaborator_id"])
+	_colaborator, flag = val.validateColaborator(data["colaborator_id"],db)
 	if flag!=201:
 		return _colaborator, flag
 
@@ -160,12 +160,12 @@ def ManageColaborators():
 		return msg,flag	
 
 	#Validates User
-	colaborators, flag = val.validateColaboratorList(data["colaborator_list"])
+	colaborators, flag = val.validateColaboratorList(data["colaborator_list"],db)
 	if flag != 201:
 		return colaborators, flag
 
 	#Validates Key
-	_application, flag = val.validateKey(data["key"])
+	_application, flag = val.validateKey(data["key"],db)
 	if flag != 201:
 		return _application, flag
 
