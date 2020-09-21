@@ -6,7 +6,6 @@ import static.validations as val
 import static.json as json_handler
 import pymongo
 import time
-import os
 
 mb_user = "Vinicius"
 pwd = "sYlrvbXJUtKyvwBZ"
@@ -21,7 +20,7 @@ db = client.RecDB
 
 @app.route('/')
 def index(methods=["GET","POST"]):
-	return "",200
+	return "",201
 
 @app.route('/makeEvaluation',methods=["GET","POST"])
 def makeEvaluation():	
@@ -159,29 +158,32 @@ def ManageColaborators():
 	if flag != 201:
 		return msg,flag	
 
-	#Validates User
-	colaborators, flag = val.validateColaboratorList(data["colaborator_list"],db)
-	if flag != 201:
-		return colaborators, flag
-
 	#Validates Key
 	_application, flag = val.validateKey(data["key"],db)
 	if flag != 201:
 		return _application, flag
 
+	#Validates User
+	colaborators, flag = val.validateColaboratorList(data["colaborator_list"],db)
+	if flag != 201:
+		return colaborators, flag
+
 	#Separates by method
 	if request.method == "POST":
 		
 		#Updates the Database
+		d={}
 		for i in range(len(data["colaborator_list"])):
-			db["Applications"].update_one(_application,{"$set":{"colaborators."+data["colaborator_list"][i]:data["status_list"][i]}},upsert=True)
-
+			d["colaborators."+data["colaborator_list"][i]] = data["status_list"][i]
+		db["Applications"].update_one(_application,{"$set":d})
 		return "Colaborators updated succesfully", 201
 
 	elif request.method == "DELETE":
 		#Updates the Database
+		d={}
 		for i in range(len(data["colaborator_list"])):
-			db["Applications"].update_one(_application,{"$unset":{"colaborators."+data["colaborator_list"][i]:""}})
+			d["colaborators."+data["colaborator_list"][i]] = ""
+		db["Applications"].update_one(_application,{"$unset":d})
 
 		return "",204
 
@@ -193,7 +195,3 @@ def ManageColaborators():
 				if j != "_id":
 					d[i][j]=colaborators[i][j]
 		return d, 226
-	
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
