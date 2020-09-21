@@ -186,7 +186,11 @@ def ManageColaborators():
 		return "",204
 
 	elif request.method == "GET":
-		return colaborators, 226
+		d = {}
+		for i in colaborators.keys():
+			if i != "_id":
+				d[i]=colaborators[i]
+		return d, 226
 	
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
