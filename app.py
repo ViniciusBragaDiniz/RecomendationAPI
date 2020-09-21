@@ -20,7 +20,7 @@ db = client.RecDB
 
 @app.route('/')
 def index(methods=["GET","POST"]):
-	return redirect(url_for("userSignUp"))
+	return "",200
 
 @app.route('/makeEvaluation',methods=["GET","POST"])
 def makeEvaluation():	
