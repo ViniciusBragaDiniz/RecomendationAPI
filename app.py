@@ -1,4 +1,3 @@
-import os
 from flask import Flask, jsonify, request, render_template, redirect, url_for
 from flask_bootstrap import Bootstrap
 from bson.objectid import ObjectId
@@ -15,259 +14,175 @@ app = Flask(__name__)
 bootstrap = Bootstrap(app)
 app.config["SECRET_KEY"] = "STRINGHARDTOGUESS"
 
+
+client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
+db = client.RecDB
+
 @app.route('/')
 def index(methods=["GET","POST"]):
 	return redirect(url_for("userSignUp"))
 
 @app.route('/makeEvaluation',methods=["GET","POST"])
-def makeEvaluation():
-	client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-	db = client.RecDB
-	
+def makeEvaluation():	
+	if request.content_type != "application/json":
+		return "Bad Request. Content Type must be application/json", 400
+
 	data = request.get_json()
 	keys = ["user_id","colaborator_id","key","evaluation","comments","questions"]
 	value_types = [str,str,str,float,str,list]
+
+	#Validates JSON
 	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
 	if flag != 201:
-		client.close()
 		return msg,flag
 
-	uid = data["user_id"]
-	cid = data["colaborator_id"]
-	key = data["key"]
-	e= data["evaluation"]
-	comment = data["comments"]
-	q = data["questions"]
-
-	#Validates User
-	user, flag = val.validateUser(uid)
-	if flag != 201:
-		client.close()
-		return user, str(flag)
-
 	#Validates Colaborator
-	collaborator, flag = val.validateColaborator(cid)
+	_application, flag = val.validateEvaluation(data["key"],
+		                                        data["user_id"],
+		                                        data["colaborator_id"],
+		                                        data["questions"],
+		                                        db)
 	if flag != 201:
-		client.close()
-		return collaborator, flag
-
-	#Validates Key
-	_application, flag = val.validateKey(key)
-	if flag != 201:
-		client.close()
 		return _application, flag
 
-	aid = _application["_id"]
-	query = db["Avaliacoes"].find_one({"key":key,"user_id":ObjectId(uid),"colaborator_id":ObjectId(cid)})
+	if len(data["questions"]) < len(_application["questions"]):
+		size1 = len(data["questions"])
+		size2 = len(_application["questions"])
+		return "Size of 'questions' list is {}, it should be {}".format(size1,size2),400
+
+	_questions = {}
+	count = 0
+	for i in _application["questions"]:
+		_questions[i]=data["questions"][count]
+		count+=1
+
+	query = db["Avaliacoes"].find_one({"app_id":ObjectId(_application["_id"]),
+								   "user_id":ObjectId(data["user_id"]),
+								   "colaborator_id":ObjectId(data["colaborator_id"])})
 	if(query):
-		db["Avaliacoes"].update_one(query,{"$set":{"evaluation":e,"evaluation_time":time.time(),"comment":comment}})
+		db["Avaliacoes"].update_one(query,{"$set":{"evaluation":data["evaluation"],
+												   "evaluation_time":time.time(),
+												   "comments":data["comments"], 
+												   "questions":_questions}})
+		return "Evaluation updated succesfully",201
 	else:
-		_questions = {}
-		count = 0
-		for i in _application["questions"]:
-			_questions[i]=q[count]
-			count+=1
-		_id = db["Avaliacoes"].insert_one({"app_id":ObjectId(aid),
-										   "user_id":ObjectId(uid),
-										   "colaborator_id":ObjectId(cid),
-										   "evaluation":e,
+		
+		_id = db["Avaliacoes"].insert_one({"app_id":ObjectId(_application["_id"]),
+										   "user_id":ObjectId(data["user_id"]),
+										   "colaborator_id":ObjectId(data['colaborator_id']),
+										   "evaluation":data["evaluation"],
 										   "evaluation_time":time.time(),
-										   "comment":comment,
+										   "comment":data["comments"],
 										   "questions":_questions})
-		return "Sucess!", 201
-	client.close()
+		return "Evaluation created succesfully",201
+
 
 @app.route('/evaluationByApp',methods=["GET"])
 def evaluationByApp():
-	client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-	db = client.RecDB
-	dbcollection = db.Evaluated
+	#Verifies the content of the request
+	if request.content_type != "application/json":
+		return "Bad Request. Content Type must be application/json", 400
 
+	#Gets request JSON
 	data = request.get_json()
 	keys = ["app_id","colaborator_id"]
 	value_types = [str,str]
+
+	#Validates JSON
 	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
 	if flag != 201:
-		client.close()
 		return msg,flag
 
-
-	_application, flag = val.validateApplication(data["app_id"])
-
-	if(flag == 201):
+	#Validates Application
+	msg, flag = val.validateApplication(data["app_id"])
+	if(flag != 201):
+		return msg,flag
 		
-		_colaborator, flag = val.validateColaborator(data["colaborator_id"])
-		if flag!=201:
-			return _colaborator, flag
+	#Validates Colaborator
+	msg, flag = val.validateColaborator(data["colaborator_id"])
+	if flag!=201:
+		return msg, flag
 
-		query = db["Avaliacoes"].find({"app_id":ObjectId(data["app_id"]),"colaborator_id":ObjectId(data["colaborator_id"])},{"_id":0,"key":0})
-		if(query):
-			
-			json = json_handler.evaluationJson(query)
-			client.close()
-			return jsonify(json)
+	#Gets all evaluations to a specific APP
+	query = db["Avaliacoes"].find({"app_id":ObjectId(data["app_id"]),"colaborator_id":ObjectId(data["colaborator_id"])},{"_id":0,"key":0})
+	
+	if(query):
+		json = json_handler.evaluationJson(query)
+		return jsonify(json),200
 	else:
-		client.close()
-		return _application, flag
+		return None,200
 
 @app.route('/fullEvaluation',methods=["GET"])
 def fullEvaluation():
-	
-	client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-	db = client.RecDB
-		
+	#Verifies the content of the request
+	if request.content_type != "application/json":
+		return "Bad Request. Content Type must be application/json", 400
+
+	#Gets the request JSON
 	data = request.get_json()
 	keys = ["colaborator_id"]
 	value_types = [str]
+
+	#Validates the request JSON
 	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
 	if flag != 201:
-		client.close()
 		return msg,flag
 
+	#Validates Colaborator
 	_colaborator, flag = val.validateColaborator(data["colaborator_id"])
 	if flag!=201:
 		return _colaborator, flag
 
+	#Gets all evaluations made on this colaborator
 	query = db["Avaliacoes"].find({"colaborator_id":ObjectId(data["colaborator_id"])},{"_id":0,"key":0})
+
 	if(query):
-		
 		json = json_handler.evaluationJson(query)
-		client.close()
 		return jsonify(json), 200
+	else:
+		return None, 200
 
-@app.route('/InsertOrUpdateColaborator')
-def insertColaborator():
-	client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-	db = client.RecDB
+@app.route("/ManageColaborators",methods=["GET","POST","DELETE"])
+def ManageColaborators():
+	#Verifies the content of the request
+	if request.content_type != "application/json":
+		return "Bad Request. Content Type must be application/json", 400
 
+	#Gets the request JSON
 	data = request.get_json()
-	keys = ["key","colaborator_id","status"]
-	value_types = [str,str,str]
+	keys = ["key","colaborator_list","status_list"]
+	value_types = [str,list,list]
+	
+	#Validates the request JSON
 	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
 	if flag != 201:
-		client.close()
 		return msg,flag	
 
 	#Validates User
-	collaborator, flag = val.validateColaborator(data["colaborator_id"])
+	colaborators, flag = val.validateColaboratorList(data["colaborator_list"])
 	if flag != 201:
-		client.close()
-		return collaborator, flag
+		return colaborators, flag
 
 	#Validates Key
 	_application, flag = val.validateKey(data["key"])
 	if flag != 201:
-		client.close()
 		return _application, flag
 
-	query_app = db["Applications"].find_one({"key":data["key"]})
-
-	db["Applications"].update_one(query_app,{"$set":{"colaborators."+data["colaborator_id"]:data["status"]}})
-
-	return "Colaborator updated succesfully", 201
-
-@app.route('/RemoveColaborator')
-def removeColaborator():
-	client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-	db = client.RecDB
-
-	data = request.get_json()
-	keys = ["key","colaborator_id"]
-	value_types = [str,str]
-	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
-	if flag != 201:
-		client.close()
-		return msg,flag
-
-	#Validates User
-	collaborator, flag = val.validateColaborator(data["colaborator_id"])
-	if flag != 201:
-		client.close()
-		return collaborator, flag
-
-	#Validates Key
-	_application, flag = val.validateKey(data["key"])
-	if flag != 201:
-		client.close()
-		return _application, flag
-
-	query_app = db["Applications"].find_one({"key":data["key"]})
-
-	db["Applications"].update_one(query_app,{"$unset":{"colaborators."+data["colaborator_id"]:""}})
-
-	return "Colaborator updated succesfully", 201
-
-@app.route('/userSignUp',methods=["GET","POST"])
-def userSignUp():
-	form = forms.userSignUp()
-	if form.validate_on_submit():
-		client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-		db = client.RecDB
-		dbcollection = db.Evaluators
-		name = form.name.data
-		user_email = form.user_email.data
-		pswd = form.user_pswd.data
-
-		query = db["Evaluators"].find_one({"user_email":user_email})
-		if(query):
-
-			client.close()
-			return str(query["_id"])
-		else:
-
-			client.close()
-			return str(dbcollection.insert_one({"name":name,"user_email":user_email}).inserted_id)
-
-	return render_template("index.html",form=form)
-
-@app.route('/colaboratorSignUp',methods=["GET","POST"])
-def colaboratorSignUp():
-	form = forms.colaboratorSignUp()
-	if form.validate_on_submit():
-		client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-		db = client.RecDB
-		dbcollection = db.Evaluated
-		name = form.name.data
-		email = form.user_email.data
-		pswd = form.user_pswd.data
+	#Separates by method
+	if request.method == "POST":
 		
-		query = db["Evaluated"].find_one({"email":email})
-		if(query):
+		#Updates the Database
+		for i in range(len(data["colaborator_list"])):
+			db["Applications"].update_one(_application,{"$set":{"colaborators."+data["colaborator_list"][i]:data["status_list"][i]}})
 
-			client.close()
-			raise Exception("User already exists, please check if the e-mail entered is correctly and try again.")
-		else:
+		return "Colaborators updated succesfully", 201
 
-			client.close()
-			return str(dbcollection.insert_one({"name":name}).inserted_id)
+	elif request.method == "DELETE":
+		#Updates the Database
+		for i in range(len(data["colaborator_list"])):
+			db["Applications"].update_one(_application,{"$unset":{"colaborators."+data["colaborator_list"][i]:""}})
 
-	return render_template("index.html",form=form)
+		return "",204
 
-@app.route('/applicationSignUp',methods=["GET","POST"])
-def applicationSignUp():
-	form = forms.applicationSignUp()
-	if form.validate_on_submit():
-		client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
-		db = client.RecDB
-		
-		name = form.name.data
-		key = form.key.data
-		key_status = form.key_status.data
-		question = form.questions.data.split(",")
-		
-		query = db["Applications"].find_one({"key":key})
-		if(query):
-
-			client.close()
-			raise Exception("Application already exists, please check if the key entered is correct and try again.")
-		else:
-
-			client.close()
-			return str(db["Applications"].insert_one({"name":name}).inserted_id)
-
-	return render_template("index.html",form=form)
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
+	elif request.method == "GET":
+		return colaborators, 226
