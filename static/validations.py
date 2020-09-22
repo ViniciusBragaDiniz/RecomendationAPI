@@ -44,8 +44,6 @@ def validateKey(key,db):
 
 		elif not _application["key_status"]:
 			return deactivated_key
-		
-		return _application, 201
 	
 		elif _application["requisitions"] >= _application["limit"]:
 			return passed_limit_key
