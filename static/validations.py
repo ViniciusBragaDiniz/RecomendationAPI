@@ -10,6 +10,7 @@ invalid_colaborator_at_position = "Invalid Colaborator ID at position: "
 invalid_user_at_position = "Invalid User ID at position: "
 invalid_key = ("Invalid Aplication Key. Please check if Aplication Key value is correct",401)
 deactivated_key = ("Your API access must be enabled. Please contact Support.",501)
+passed_limit_key = ("You passed your limit of requisitions. Please contact Support to get another key",401)
 invalid_question = ("Invalid Question Type {} at position: {}",401)
 invalid_user = ("Invalid User ID, please check if User ID value is correct",401)
 invalid_app = ("Invalid APP ID, please check if APP ID value is correct",401)
