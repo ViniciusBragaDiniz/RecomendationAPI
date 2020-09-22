@@ -171,7 +171,8 @@ def ManageColaborators():
 
 	#Separates by method
 	if request.method == "POST":
-		
+		if len(colaborator_list) != len(status_list):
+			return "Bad Request: lenghts of colaborator_list and status_list must match",400
 		#Updates the Database
 		d={}
 		for i in range(len(data["colaborator_list"])):
