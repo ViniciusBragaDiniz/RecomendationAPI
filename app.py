@@ -1,12 +1,16 @@
-from flask import Flask, jsonify, request, render_template, redirect, url_for
+from flask import Flask, jsonify, session, request, render_template, redirect, url_for, flash
 from flask_bootstrap import Bootstrap
 from bson.objectid import ObjectId
 import static.forms as forms
 import static.validations as val
 import static.json as json_handler
+import static.CaptureOrder
 import pymongo
 import time
-import os
+import secrets
+import hashlib
+import requests
+import json
 
 mb_user = "Vinicius"
 pwd = "sYlrvbXJUtKyvwBZ"
@@ -15,189 +19,300 @@ app = Flask(__name__)
 bootstrap = Bootstrap(app)
 app.config["SECRET_KEY"] = "STRINGHARDTOGUESS"
 
-
 client = pymongo.MongoClient("mongodb+srv://"+mb_user+":"+pwd+"@recdb.smlnb.mongodb.net/RecDB?retryWrites=true&w=majority")
 db = client.RecDB
 
-@app.route('/')
-def index(methods=["GET","POST"]):
-	return "",201
-
-@app.route('/makeEvaluation',methods=["GET","POST"])
-def makeEvaluation():	
-	if request.content_type != "application/json":
-		return "Bad Request. Content Type must be application/json", 400
-
-	data = request.get_json()
-	keys = ["user_id","colaborator_id","key","evaluation","comments","questions"]
-	value_types = [str,str,str,float,str,list]
-
-	#Validates JSON
-	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
-	if flag != 201:
-		return msg,flag
-
-	#Validates Colaborator
-	_application, flag = val.validateEvaluation(data["key"],
-		                                        data["user_id"],
-		                                        data["colaborator_id"],
-		                                        data["questions"],
-		                                        db)
-	if flag != 201:
-		return _application, flag
-
-	if len(data["questions"]) < len(_application["questions"]):
-		size1 = len(data["questions"])
-		size2 = len(_application["questions"])
-		return "Size of 'questions' list is {}, it should be {}".format(size1,size2),400
-
-	_questions = {}
-	count = 0
-	for i in _application["questions"]:
-		_questions[i]=data["questions"][count]
-		count+=1
-
-	query = db["Avaliacoes"].find_one({"app_id":ObjectId(_application["_id"]),
-								   "user_id":ObjectId(data["user_id"]),
-								   "colaborator_id":ObjectId(data["colaborator_id"])})
-	if(query):
-		db["Avaliacoes"].update_one(query,{"$set":{"evaluation":data["evaluation"],
-												   "evaluation_time":time.time(),
-												   "comments":data["comments"], 
-												   "questions":_questions}})
-		return "Evaluation updated succesfully",201
-	else:
+@app.route('/',methods=["GET","POST"])
+def index():
+	form = forms.userLogin()
+	if form.validate_on_submit():
+		email = form.email.data
+		data = db["Users"].find_one({"user_email":email})
+		userdata = User(username=data["name"],email=data["user_email"])
+		client.close()
+		return str(userdata.username)
+	return render_template("base.html",form=form, name=session.get("name"),user=session.get("user"))
 		
-		_id = db["Avaliacoes"].insert_one({"app_id":ObjectId(_application["_id"]),
-										   "user_id":ObjectId(data["user_id"]),
-										   "colaborator_id":ObjectId(data['colaborator_id']),
-										   "evaluation":data["evaluation"],
-										   "evaluation_time":time.time(),
-										   "comment":data["comments"],
-										   "questions":_questions})
-		return "Evaluation created succesfully",201
+@app.route('/user',methods=["GET","POST"])
+def user():
+	form = forms.userSignUp()
+	form2 = forms.userLogin()
+	
+	return render_template("index.html",form=form,form2=form2,signUp = "userSignUp", signIn = "userSignIn", name=session.get("name"),user=session.get("user"))
+@app.route('/userSignUp', methods=["GET","POST"])
+def userSignUp():
+	form = forms.userSignUp()
+	form2 = forms.userLogin()
 
+	if form.validate_on_submit():
+		name = form.name.data
+		email = form.email.data
+		pswd = hashlib.sha256(form.pswd.data.encode()).hexdigest()
 
-@app.route('/evaluationByApp',methods=["GET"])
-def evaluationByApp():
-	#Verifies the content of the request
-	if request.content_type != "application/json":
-		return "Bad Request. Content Type must be application/json", 400
+		query = db["Users"].find_one({"user_email":email})
+		if(query):
+			flash(str(query["_id"]))
+		else:
+			flash(str(db["Users"].insert_one({"name":name,"user_email":email,"user_pswd":pswd}).inserted_id))
 
-	#Gets request JSON
-	data = request.get_json()
-	keys = ["app_id","colaborator_id"]
-	value_types = [str,str]
+	return render_template("index.html",form=form,form2=form2,signUp = "userSignUp", signIn = "userSignIn", name=session.get("name"),user=session.get("user"))
 
-	#Validates JSON
-	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
-	if flag != 201:
-		return msg,flag
+@app.route('/userSignIn', methods=["GET","POST"])
+def userSignIn():
+	form = forms.userSignUp()
+	form2 = forms.userLogin()
 
-	#Validates Application
-	msg, flag = val.validateApplication(data["app_id"],db)
-	if(flag != 201):
-		return msg,flag
+	email = request.form["login_email"]
+	pswd = hashlib.sha256(request.form["login_pswd"].encode()).hexdigest()
+	
+	query = db["Users"].find_one({"user_email":email,"user_pswd":pswd})
+	if(query):
+		session["_id"] = str(query["_id"])
+		session["name"] = str(query["name"])
+		session["user"] = "user"
+	else:
+		flash("Incorrect E-mail or Password.")
+
+	return render_template("index.html",form=form,form2=form2,signUp = "userSignUp", signIn = "userSignIn", name=session.get("name"),user=session.get("user"))
+
+@app.route('/colaborator',methods=["GET","POST"])
+def colaborator():
+	form = forms.colaboratorSignUp()
+	form2 = forms.userLogin()
+	if form.validate_on_submit():
+		name = form.name.data
+		email = form.email.data
+		pswd = hashlib.sha256(form.pswd.data.encode()).hexdigest()
 		
-	#Validates Colaborator
-	msg, flag = val.validateColaborator(data["colaborator_id"],db)
-	if flag!=201:
-		return msg, flag
+		query = db["Colaborators"].find_one({"user_email":email})
+		if(query):
+			flash("User already exists.")
+		else:
+			return str(db["Colaborators"].insert_one({"name":name,"user_email":email,"user_pswd":pswd}).inserted_id)
 
-	#Gets all evaluations to a specific APP
-	query = db["Avaliacoes"].find({"app_id":ObjectId(data["app_id"]),"colaborator_id":ObjectId(data["colaborator_id"])},{"_id":0,"key":0})
-	
+	return render_template("index.html",form=form,form2=form2,signUp = "colaboratorSignUp", signIn="colaboratorSignIn", name=session.get("name"),user=session.get("user"))
+
+@app.route('/colaboratorSignUp', methods=["GET","POST"])
+def colaboratorSignUp():
+	name = request.form["name"]
+	email = request.form["email"]
+	psw = hashlib.sha256(frequest.form["pswd"].encode()).hexdigest()
+
+	query = db["Colaborators"].find_one({"user_email":email})
 	if(query):
-		json = json_handler.evaluationJson(query)
-		return jsonify(json),200
+		flash("User already exists.")
 	else:
-		return None,200
+		return str(db["Colaborators"].insert_one({"name":name,"user_email":email,"user_pswd":pswd}).inserted_id)
 
-@app.route('/fullEvaluation',methods=["GET"])
-def fullEvaluation():
-	#Verifies the content of the request
-	if request.content_type != "application/json":
-		return "Bad Request. Content Type must be application/json", 400
+	return render_template("index.html",form=form,form2=form2,signUp = "colaboratorSignUp", signIn="colaboratorSignIn", name=session.get("name"),user=session.get("user"))
 
-	#Gets the request JSON
-	data = request.get_json()
-	keys = ["colaborator_id"]
-	value_types = [str]
+@app.route('/colaboratorSignIn', methods=["GET","POST"])
+def colaboratorSignIn():
+	form = forms.userSignUp()
+	form2 = forms.userLogin()
 
-	#Validates the request JSON
-	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
-	if flag != 201:
-		return msg,flag
-
-	#Validates Colaborator
-	_colaborator, flag = val.validateColaborator(data["colaborator_id"],db)
-	if flag!=201:
-		return _colaborator, flag
-
-	#Gets all evaluations made on this colaborator
-	query = db["Avaliacoes"].find({"colaborator_id":ObjectId(data["colaborator_id"])},{"_id":0,"key":0})
-
+	email = request.form["login_email"]
+	pswd = hashlib.sha256(request.form["login_pswd"].encode()).hexdigest()
+	
+	query = db["Colaborators"].find_one({"user_email":email,"user_pswd":pswd})
 	if(query):
-		json = json_handler.evaluationJson(query)
-		return jsonify(json), 200
+		session["_id"] = str(query["_id"])
+		session["name"] = str(query["name"])
+		session["user"] = "colab"
 	else:
-		return None, 200
+		flash("Incorrect E-mail or Password.")
 
-@app.route("/ManageColaborators",methods=["GET","POST","DELETE"])
-def ManageColaborators():
-	#Verifies the content of the request
-	if request.content_type != "application/json":
-		return "Bad Request. Content Type must be application/json", 400
 
-	#Gets the request JSON
+	return render_template("index.html",form=form,form2=form2,signUp = "colaboratorSignUp", signIn="colaboratorSignIn", name=session.get("name"),user=session.get("user"))
+
+@app.route('/application',methods=["GET","POST"])
+def application():
+	form = forms.applicationSignUp()
+	form2 = forms.userLogin()
+
+	return render_template("index.html",form=form,form2=form2,signUp = "appSignUp", signIn="appSignIn", name=session.get("name"),user=session.get("user"))
+
+@app.route('/appSignUp',methods=["GET","POST"])
+def appSignUp():
+	name = request.form["name"]
+	email = request.form["email"]
+	psw = hashlib.sha256(frequest.form["pswd"].encode()).hexdigest()
+	question = request.form["question"].split(",")
+	
+	query = db["Applications"].find_one({"name":name})
+	if(query):
+		return "Application already exists, please check if the key entered is correct and try again."
+
+	else:
+		return "Cadastro realizado com sucesso!\n"+str(db["Applications"].insert_one({"name":name,
+																					  "user_email":email,
+																					  "user_psw":psw,
+																					  "key":None,
+																					  "key_status":False,
+																					  "limit":0,
+																					  "requisitions":0,
+																					  "questions":question}).inserted_id)
+	return render_template("index.html",form=form,form2=form2,signUp = "appSignUp", signIn="appSignIn",name=session.get("name"),user=session.get("user"))
+
+@app.route('/appSignIn', methods=["GET","POST"])
+def appSignIn():
+	form = forms.userSignUp()
+	form2 = forms.userLogin()
+
+	email = request.form["login_email"]
+	pswd = hashlib.sha256(request.form["login_pswd"].encode()).hexdigest()
+	
+	query = db["Applications"].find_one({"user_email":email,"user_pswd":pswd})
+	if(query):
+		session["_id"] = str(query["_id"])
+		session["name"] = str(query["name"])
+		session["user"] = "app"
+		session["key"] = str(query["key"])
+	else:
+		flash("Incorrect E-mail or Password.")
+
+	return redirect(url_for("appInfo"))
+@app.route('/logout',methods=["GET","POST"])
+def logout():
+	session.clear()
+	return redirect(url_for("application"))
+@app.route('/buy',methods=["GET","POST"])
+def buy():
+	if session.get("_id"):
+		form = forms.payment()
+		if form.validate_on_submit():
+			data = db["Applications"].find_one({"_id":ObjectId(session.get("_id"))})
+			if data:
+				session["key_type"] = form.key_type.data
+				return redirect(url_for("payment"))
+
+			else:
+				flash("Application don't exists")
+				return redirect(url_for("application",
+										form=forms.applicationSignUp(), form2=forms.userLogin()), 
+										name=session.get("name"),user=session.get("user"))
+
+		return render_template("base.html",form=form,  name=session.get("name"),user=session.get("user"))
+	else:
+		flash("Você não está logado!")
+		return redirect(url_for("application",
+										form=forms.applicationSignUp(), form2=forms.userLogin()), 
+										name=session.get("name"),user=session.get("user"))
+
+@app.route('/appInfo',methods=["GET","POST"])
+def appInfo():
+	form = forms.searchColab()
+	form2 = forms.manageColab()
+	urls=["/appInfo/Buscar","/appInfo/Cadastrar","/appInfo/Atualizar","/appInfo/Remover"]
+	return render_template("app_info.html",form=form, form2 = form2, name=session.get("name"),user=session.get("user"), info=None)
+
+@app.route('/appInfo/Procurar',methods=["GET","POST"])
+def appInfoBuscar():
+	form = forms.searchColab()
+	form2 = forms.manageColab()
+	try:
+		query = db["Colaborators"].find_one({"_id":ObjectId(request.form["cid"])})
+		if query:
+			info = {}
+			info["User Name"] = query["name"]
+			info["User E-Mail"] = query["user_email"]
+			info["Questions"] = db["Applications"].find_one({"_id":ObjectId(session.get("_id"))},{"questions":1,"_id":0})["questions"]
+
+			new_query = db["Avaliacoes"].find({"colaborator_id":ObjectId(request.form["cid"]),"app_id":ObjectId(session.get("_id"))})
+			if new_query:
+				info["evaluation"] = []
+				count=0
+				for i in new_query:
+					info["evaluation"].append({"Avaliação":i["evaluation"],
+											 "Horário":time.strftime('%d-%m-%Y %H:%M:%S', time.localtime(i["evaluation_time"])),
+											 "Comentário":i["comment"]})
+
+					if len(i["questions"]) > 0:
+						for j in i["questions"]:
+							info["evaluation"][count][j] = i["questions"][j] 
+					count+=1
+			else:
+				info["evaluation"] = None
+
+
+
+			return render_template("app_info.html",form=form, form2 = form2, name=session.get("name"),user=session.get("user"), info=info)
+		else:
+			flash("ID Inválido, não foi possível encontrar o colaborador")
+			return redirect(url_for("appInfo"))
+	except:
+		flash("ID Inválido, não foi possível encontrar o colaborador")
+		return redirect(url_for("appInfo"))
+	return render_template("app_info.html",form=form, form2 = form2, name=session.get("name"),user=session.get("user"), info=None)
+
+
+
+@app.route('/appInfo/Cadastrar',methods=["GET","POST"])
+def appInfoCadastrar():
+	form = forms.searchColab()
+	form2 = forms.manageColab()
+	
+	colaborator_list = request.form["cid"].split(',')
+	status_list = request.form["status"].split(',')
+
+	body = {"key":session.get("key"),"colaborator_list":colaborator_list,"status_list":status_list}
+
+	res= requests.post("https://recomendation-api-cefet.herokuapp.com/ManageColaborators",data=json.dumps(body),headers={"content-type":"application/json"})
+
+	flash(res.text)
+	return render_template("app_info.html",form=form, form2 = form2, name=session.get("name"),user=session.get("user"), info=None)
+
+@app.route('/appInfo/Atualizar', methods=["GET","POST"])
+def appInfoAtualizar():
+	form = forms.searchColab()
+	form2 = forms.manageColab()
+	
+	colaborator_list = request.form["cid"].split(',')
+	status_list = request.form["status"].split(',')
+
+	body = {"key":session.get("key"),"colaborator_list":colaborator_list,"status_list":status_list}
+
+	res= requests.post("https://recomendation-api-cefet.herokuapp.com/ManageColaborators",data=json.dumps(body),headers={"content-type":"application/json"})
+
+	flash(res.text)
+	return render_template("app_info.html",form=form, form2 = form2, name=session.get("name"),user=session.get("user"), info=None)
+
+
+@app.route('/appInfo/Remover',methods=["GET","POST","DELETE"])
+def appInfoRemover():
+	form = forms.searchColab()
+	form2 = forms.manageColab()
+	
+	colaborator_list = request.form["cid"].split(',')
+	status_list = []
+
+	body = {"key":session.get("key"),"colaborator_list":colaborator_list,"status_list":status_list}
+
+	requests.delete("https://recomendation-api-cefet.herokuapp.com/ManageColaborators",data=json.dumps(body),headers={"content-type":"application/json"})
+
+	flash("Colaborator removed sucessfully")
+	return render_template("app_info.html",form=form, form2 = form2, name=session.get("name"),user=session.get("user"), info=None)
+
+@app.route('/payment',methods=["GET","POST"])
+def payment():
+	key_type = int(session.get("key_type"))
+	if key_type == 1:
+		value = 100.00
+	elif key_type == 2:
+		value = 195.00
+	elif key_type == 3:
+		value = 250.00
+	return render_template('payment.html',value=value, name=session.get("name"),user=session.get("user"))
+
+@app.route('/confirmPayment',methods=["GET","POST"])
+def confirm():
 	data = request.get_json()
-	keys = ["key","colaborator_list","status_list"]
-	value_types = [str,list,list]
-	
-	#Validates the request JSON
-	msg,flag = json_handler.validateJson(dict(data),keys,value_types)
-	if flag != 201:
-		return msg,flag	
+	response = CaptureOrder().capture_order(data["orderID"],
+											client.OrdersDB,
+											db,
+											session.get("_id"),
+											int(session.get("key_type")),
+											debug=True)
+	return "Sucess",201
 
-	#Validates Key
-	_application, flag = val.validateKey(data["key"],db)
-	if flag != 201:
-		return _application, flag
 
-	#Validates User
-	colaborators, flag = val.validateColaboratorList(data["colaborator_list"],db)
-	if flag != 201:
-		return colaborators, flag
-
-	#Separates by method
-	if request.method == "POST":
-		if len(data["colaborator_list"]) != len(data["status_list"]):
-			return "Bad Request: lenghts of colaborator_list and status_list must match",400
-		#Updates the Database
-		d={}
-		for i in range(len(data["colaborator_list"])):
-			d["colaborators."+data["colaborator_list"][i]] = data["status_list"][i]
-		db["Applications"].update_one(_application,{"$set":d})
-		return "Colaborators updated succesfully", 201
-
-	elif request.method == "DELETE":
-		#Updates the Database
-		d={}
-		for i in range(len(data["colaborator_list"])):
-			d["colaborators."+data["colaborator_list"][i]] = ""
-		db["Applications"].update_one(_application,{"$unset":d})
-
-		return "",204
-
-	elif request.method == "GET":
-		d = {}
-		for i in colaborators.keys():
-			d[i]={}
-			for j in colaborators[i]:
-				if j != "_id":
-					d[i][j]=colaborators[i][j]
-		return d, 226
-	
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
