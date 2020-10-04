@@ -99,7 +99,7 @@ def evaluationByApp():
 		return msg, flag
 
 	#Gets all evaluations to a specific APP
-	query = db["Avaliacoes"].find({"app_id":ObjectId(data["app_id"]),"colaborator_id":ObjectId(data["colaborator_id"])},{"_id":0,"app_id":0,"colaborator_id":0,"user_id":0,key":0})
+	query = db["Avaliacoes"].find({"app_id":ObjectId(data["app_id"]),"colaborator_id":ObjectId(data["colaborator_id"])},{"_id":0,"app_id":0,"colaborator_id":0,"user_id":0,"key":0})
 	
 	if(query):
 		json = json_handler.evaluationJson(query)
